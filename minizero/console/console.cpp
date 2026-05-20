@@ -285,7 +285,7 @@ void Console::cmdLoadGame(const std::vector<std::string>& args)
 
     actor_->reset();
     if (!env_loader.getTag("SD").empty()) { // environment requires specific seed
-#if ATARI || PUZZLE2048 || TETRISBLOCKPUZZLE
+#if ATARI || PUZZLE2048 || SUIKA || TETRISBLOCKPUZZLE
         actor_->getEnvironment().reset(std::stoi(env_loader.getTag("SD")));
 #elif RUBIKS
         actor_->getEnvironment().reset(std::stoi(env_loader.getTag("SD")), std::stoi(env_loader.getTag("SC")));

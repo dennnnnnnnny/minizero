@@ -35,6 +35,16 @@ RUN rm /etc/apt/sources.list.d/cuda.list || true && \
     python3 -m pip cache purge && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
+# install Chipmunk2D
+RUN cd /opt && \
+    git clone --depth 1 https://github.com/slembcke/Chipmunk2D.git && \
+    cd Chipmunk2D && \
+    cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBUILD_DEMOS=OFF -DBUILD_SHARED=ON -DCMAKE_POSITION_INDEPENDENT_CODE=ON && \
+    cmake --build build -j$(nproc) && \
+    cmake --install build && \
+    ldconfig && \
+    cd /opt && rm -rf Chipmunk2D
+
 # install pytorch & libtorch
 RUN python3 -m pip install torch==1.13.0+cu116 --extra-index-url https://download.pytorch.org/whl/cu116 && \
     wget -qO- https://download.pytorch.org/libtorch/cu116/libtorch-cxx11-abi-shared-with-deps-1.13.0%2Bcu116.zip | bsdtar -xvf- -C /usr/local && \
@@ -42,11 +52,10 @@ RUN python3 -m pip install torch==1.13.0+cu116 --extra-index-url https://downloa
 ENV CMAKE_PREFIX_PATH=/usr/local/libtorch/share/cmake/Torch
 
 # install gym/atari & Arcade Learning Environment (ALE v0.8.0)
-# You can download Atari game ROMs from the following link: https://www.atarimania.com/rom_collection_archive_atari_2600_roms.html
-COPY atari57/ /opt/atari57
+# Atari ROMs are optional for Suika. Mount/copy ROMs separately and run
+# ale-import-roms if you need Atari environments in this image.
 RUN python3 -m pip install gym[atari] && \
     python3 -m pip cache purge && \
-    ale-import-roms /opt/atari57 && \
     cd /opt/ && \
     git clone https://github.com/mgbellemare/Arcade-Learning-Environment.git && \
     cd Arcade-Learning-Environment && \

@@ -82,6 +82,11 @@ typedef minizero::env::othello::OthelloEnvLoader EnvironmentLoader;
 typedef minizero::env::puzzle2048::Puzzle2048Action Action;
 typedef minizero::env::puzzle2048::Puzzle2048Env Environment;
 typedef minizero::env::puzzle2048::Puzzle2048EnvLoader EnvironmentLoader;
+#elif SUIKA
+#include "suika.h"
+typedef minizero::env::suika::SuikaAction Action;
+typedef minizero::env::suika::SuikaEnv Environment;
+typedef minizero::env::suika::SuikaEnvLoader EnvironmentLoader;
 #elif RUBIKS
 #include "rubiks.h"
 typedef minizero::env::rubiks::RubiksAction Action;
