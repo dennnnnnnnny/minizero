@@ -15,6 +15,8 @@ const int kSuikaNumFruitLevels = 11;
 const int kSuikaDiscreteValueSize = 601;
 const int kSuikaFeatureWidth = 24;
 const int kSuikaFeatureHeight = 24;
+const int kSuikaHiddenFeatureWidth = 6;
+const int kSuikaHiddenFeatureHeight = 6;
 const int kSuikaInputChannels = kSuikaNumFruitLevels + kSuikaChanceEventSize;
 
 class SuikaAction : public BaseAction {
@@ -41,7 +43,31 @@ private:
 
 class SuikaEnv : public StochasticEnv<SuikaAction> {
 public:
-    SuikaEnv();
+    struct StateFruit {
+        int id = -1;
+        int level = 0;
+        float x = 0.0f;
+        float y = 0.0f;
+        float vx = 0.0f;
+        float vy = 0.0f;
+        float angular_velocity = 0.0f;
+        float radius = 0.0f;
+        bool alive = true;
+    };
+
+    struct State {
+        std::vector<StateFruit> fruits;
+        int next_fruit_level = -1;
+        int reward = 0;
+        int total_reward = 0;
+        bool game_over = false;
+        float death_timer = 0.0f;
+        int active_drop_id = -1;
+        int next_fruit_id = 0;
+        Player turn = Player::kPlayerNone;
+    };
+
+    explicit SuikaEnv(bool initialize_physics = true);
     SuikaEnv(const SuikaEnv& env);
     SuikaEnv& operator=(const SuikaEnv& env);
     ~SuikaEnv() override;
@@ -73,8 +99,8 @@ public:
     inline int getNumChanceEventFeatureChannels() const override { return kSuikaChanceEventSize; }
     inline int getInputChannelHeight() const override { return kSuikaFeatureHeight; }
     inline int getInputChannelWidth() const override { return kSuikaFeatureWidth; }
-    inline int getHiddenChannelHeight() const override { return kSuikaFeatureHeight; }
-    inline int getHiddenChannelWidth() const override { return kSuikaFeatureWidth; }
+    inline int getHiddenChannelHeight() const override { return kSuikaHiddenFeatureHeight; }
+    inline int getHiddenChannelWidth() const override { return kSuikaHiddenFeatureWidth; }
     inline int getPolicySize() const override { return kSuikaActionSize; }
     inline int getChanceEventSize() const override { return kSuikaChanceEventSize; }
     inline int getDiscreteValueSize() const override { return kSuikaDiscreteValueSize; }
@@ -84,6 +110,8 @@ public:
     int getNumPlayer() const override { return kSuikaNumPlayer; }
     float getReward() const override { return reward_; }
     float getEvalScore(bool is_resign = false) const override { return total_reward_; }
+    State getState() const;
+    void setState(const State& state, bool rebuild_physics = false);
 
     static void setUpEnv()
     {
@@ -101,6 +129,7 @@ private:
         float y = 0.0f;
         float vx = 0.0f;
         float vy = 0.0f;
+        float angular_velocity = 0.0f;
         float radius = 0.0f;
         bool alive = true;
         cpBody* body = nullptr;
@@ -154,8 +183,8 @@ public:
 
     std::string name() const override { return kSuikaName; }
     int getPolicySize() const override { return kSuikaActionSize; }
-    int getRotatePosition(int position, utils::Rotation rotation) const override { return SuikaEnv().getRotatePosition(position, rotation); }
-    int getRotateAction(int action_id, utils::Rotation rotation) const override { return SuikaEnv().getRotateAction(action_id, rotation); }
+    int getRotatePosition(int position, utils::Rotation rotation) const override { return SuikaEnv(false).getRotatePosition(position, rotation); }
+    int getRotateAction(int action_id, utils::Rotation rotation) const override { return SuikaEnv(false).getRotateAction(action_id, rotation); }
 
 private:
     float calculateNStepValue(const int pos) const;

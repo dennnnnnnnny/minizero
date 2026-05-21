@@ -29,16 +29,16 @@ constexpr float kRightWallX = kWidth - kSideMargin;
 constexpr float kFeatureTopY = kDeadlineY;
 constexpr float kFeatureBottomY = kFloorY;
 constexpr float kDt = 1.0f / 60.0f;
-constexpr int kMaxSimulationTicks = 480;
-constexpr int kStableTickThreshold = 20;
+constexpr int kMaxSimulationTicks = 720;
 constexpr float kWallElasticity = 0.2f;
 constexpr float kWallFriction = 0.8f;
 constexpr float kFruitElasticity = 0.1f;
 constexpr float kFruitFriction = 0.6f;
-constexpr float kSleepVelocity = 15.0f;
+constexpr float kSleepVelocity = 10.0f;
+constexpr float kSleepAngularVelocity = 0.1f;
 constexpr float kDangerVelocity = 50.0f;
 constexpr float kDropReleaseVelocity = 5.0f;
-constexpr float kMergeSlack = -1.0f;
+constexpr float kMergeSlack = 0.0f;
 constexpr float kDistanceEpsilon = 1e-4f;
 
 constexpr int kFruitRadii[kSuikaNumFruitLevels] = {15, 22, 30, 36, 45, 55, 65, 78, 90, 105, 120};
@@ -87,9 +87,9 @@ SuikaChanceEvent::SuikaChanceEvent(const BaseAction& action)
     if (level_ < 0 || level_ >= kSuikaChanceEventSize) { level_ = -1; }
 }
 
-SuikaEnv::SuikaEnv()
+SuikaEnv::SuikaEnv(bool initialize_physics /* = true */)
 {
-    initializePhysics();
+    if (initialize_physics) { initializePhysics(); }
 }
 
 SuikaEnv::SuikaEnv(const SuikaEnv& env)
@@ -265,15 +265,15 @@ std::vector<float> SuikaEnv::getFeatures(utils::Rotation rotation /* = utils::Ro
 std::vector<float> SuikaEnv::getActionFeatures(const SuikaAction& action, utils::Rotation rotation /* = utils::Rotation::kRotationNone */) const
 {
     rotation = normalizeRotation(rotation);
-    const int hidden_size = kSuikaFeatureWidth * kSuikaFeatureHeight;
+    const int hidden_size = kSuikaHiddenFeatureWidth * kSuikaHiddenFeatureHeight;
     std::vector<float> action_features(kSuikaActionSize * hidden_size, 0.0f);
     if (action.getActionID() < 0 || action.getActionID() >= kSuikaActionSize) { return action_features; }
 
     const int rotated_action_id = getRotateAction(action.getActionID(), rotation);
-    const int column = static_cast<int>(std::lround(rotated_action_id * (kSuikaFeatureWidth - 1.0f) / std::max(1, kSuikaActionSize - 1)));
+    const int column = static_cast<int>(std::lround(rotated_action_id * (kSuikaHiddenFeatureWidth - 1.0f) / std::max(1, kSuikaActionSize - 1)));
     const int base = rotated_action_id * hidden_size;
-    for (int row = 0; row < kSuikaFeatureHeight; ++row) {
-        action_features[base + row * kSuikaFeatureWidth + column] = 1.0f;
+    for (int row = 0; row < kSuikaHiddenFeatureHeight; ++row) {
+        action_features[base + row * kSuikaHiddenFeatureWidth + column] = 1.0f;
     }
     return action_features;
 }
@@ -283,7 +283,7 @@ std::vector<float> SuikaEnv::getChanceEventFeatures(const SuikaAction& event, ut
     rotation = normalizeRotation(rotation);
     (void)rotation;
 
-    const int hidden_size = kSuikaFeatureWidth * kSuikaFeatureHeight;
+    const int hidden_size = kSuikaHiddenFeatureWidth * kSuikaHiddenFeatureHeight;
     std::vector<float> event_features(kSuikaChanceEventSize * hidden_size, 0.0f);
     const int level = event.getActionID() - kSuikaActionSize;
     if (level < 0 || level >= kSuikaChanceEventSize) { return event_features; }
@@ -304,6 +304,67 @@ std::string SuikaEnv::toString() const
         oss << " vel=(" << fruit.vx << "," << fruit.vy << ") r=" << fruit.radius << "\n";
     }
     return oss.str();
+}
+
+SuikaEnv::State SuikaEnv::getState() const
+{
+    State state;
+    state.fruits.reserve(fruits_.size());
+    for (const Fruit& fruit : fruits_) {
+        StateFruit state_fruit;
+        state_fruit.id = fruit.id;
+        state_fruit.level = fruit.level;
+        state_fruit.x = fruit.x;
+        state_fruit.y = fruit.y;
+        state_fruit.vx = fruit.vx;
+        state_fruit.vy = fruit.vy;
+        state_fruit.angular_velocity = fruit.angular_velocity;
+        state_fruit.radius = fruit.radius;
+        state_fruit.alive = fruit.alive;
+        state.fruits.push_back(state_fruit);
+    }
+    state.next_fruit_level = next_fruit_level_;
+    state.reward = reward_;
+    state.total_reward = total_reward_;
+    state.game_over = game_over_;
+    state.death_timer = death_timer_;
+    state.active_drop_id = active_drop_id_;
+    state.next_fruit_id = next_fruit_id_;
+    state.turn = turn_;
+    return state;
+}
+
+void SuikaEnv::setState(const State& state, bool rebuild_physics /* = false */)
+{
+    clearPhysics();
+    fruits_.clear();
+    fruits_.reserve(state.fruits.size());
+    for (const StateFruit& state_fruit : state.fruits) {
+        Fruit fruit;
+        fruit.id = state_fruit.id;
+        fruit.level = state_fruit.level;
+        fruit.x = state_fruit.x;
+        fruit.y = state_fruit.y;
+        fruit.vx = state_fruit.vx;
+        fruit.vy = state_fruit.vy;
+        fruit.angular_velocity = state_fruit.angular_velocity;
+        fruit.radius = state_fruit.radius;
+        fruit.alive = state_fruit.alive;
+        fruits_.push_back(fruit);
+    }
+    next_fruit_level_ = state.next_fruit_level;
+    reward_ = state.reward;
+    total_reward_ = state.total_reward;
+    game_over_ = state.game_over;
+    death_timer_ = state.death_timer;
+    active_drop_id_ = state.active_drop_id;
+    next_fruit_id_ = state.next_fruit_id;
+    turn_ = state.turn;
+
+    if (rebuild_physics) {
+        initializePhysics();
+        rebuildPhysicsFromState();
+    }
 }
 
 void SuikaEnv::copyFrom(const SuikaEnv& env)
@@ -350,7 +411,7 @@ void SuikaEnv::initializePhysics()
     if (space_) { return; }
     space_ = cpSpaceNew();
     cpSpaceSetGravity(space_, toChipmunk(0.0f, kGravity));
-    cpSpaceSetIterations(space_, 20);
+    cpSpaceSetIterations(space_, 10);
     setupWalls();
 }
 
@@ -403,6 +464,7 @@ void SuikaEnv::syncFruitsFromPhysics()
         fruit.y = static_cast<float>(pos.y);
         fruit.vx = static_cast<float>(vel.x);
         fruit.vy = static_cast<float>(vel.y);
+        fruit.angular_velocity = static_cast<float>(cpBodyGetAngularVelocity(fruit.body));
     }
 }
 
@@ -430,6 +492,7 @@ int SuikaEnv::spawnFruit(int level, float x, float y)
     fruit.y = y;
     fruit.vx = 0.0f;
     fruit.vy = 0.0f;
+    fruit.angular_velocity = 0.0f;
     fruit.alive = true;
     fruits_.push_back(fruit);
     Fruit& stored_fruit = fruits_.back();
@@ -447,19 +510,12 @@ int SuikaEnv::spawnFruit(int level, float x, float y)
 
 void SuikaEnv::simulateUntilStable()
 {
-    int stable_ticks = 0;
     death_timer_ = 0.0f;
 
     for (int tick = 0; tick < kMaxSimulationTicks; ++tick) {
         simulateOneStep(kDt);
         if (game_over_) { break; }
-
-        if (areAllBodiesSlow()) {
-            ++stable_ticks;
-            if (stable_ticks >= kStableTickThreshold) { break; }
-        } else {
-            stable_ticks = 0;
-        }
+        if (active_drop_id_ < 0 && areAllBodiesSlow()) { break; }
     }
 
     active_drop_id_ = -1;
@@ -611,6 +667,7 @@ bool SuikaEnv::areAllBodiesSlow() const
         if (!fruit.alive) { continue; }
         const float speed = std::sqrt(fruit.vx * fruit.vx + fruit.vy * fruit.vy);
         if (speed > kSleepVelocity) { return false; }
+        if (std::fabs(fruit.angular_velocity) > kSleepAngularVelocity) { return false; }
     }
     return true;
 }
@@ -638,7 +695,7 @@ std::vector<float> SuikaEnvLoader::getActionFeatures(const int pos, utils::Rotat
 {
     SuikaAction action;
     if (pos < static_cast<int>(action_pairs_.size())) { action = action_pairs_[pos].first; }
-    return SuikaEnv().getActionFeatures(action, rotation);
+    return SuikaEnv(false).getActionFeatures(action, rotation);
 }
 
 std::vector<float> SuikaEnvLoader::getValue(const int pos) const
